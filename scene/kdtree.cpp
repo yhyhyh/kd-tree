@@ -8,7 +8,7 @@
 #include <iostream>
 #include "./kdtree.h"
 #include <algorithm>
-#
+#include <fstream>
 
 using namespace hp;
 
@@ -32,7 +32,73 @@ cl_float8 updateaabb(cl_float8 a,cl_float8 b){
     result.s[5]=fmax(a.s[5],b.s[5]);
     return result;
 }
+int getPlatform(cl_platform_id &platform)
+{
+    platform = NULL;//the chosen platform
+    
+    cl_uint numPlatforms;//the NO. of platforms
+    cl_int    status = clGetPlatformIDs(0, NULL, &numPlatforms);
+    if (status != CL_SUCCESS)
+    {
+        std::cout<<"Error: Getting platforms!"<<std::endl;
+        return -1;
+    }
+    
+    /**For clarity, choose the first available platform. */
+    if(numPlatforms > 0)
+    {
+        cl_platform_id* platforms =
+        (cl_platform_id* )malloc(numPlatforms* sizeof(cl_platform_id));
+        status = clGetPlatformIDs(numPlatforms, platforms, NULL);
+        platform = platforms[0];
+        free(platforms);
+    }
+    else
+        return -1;
+}
 
+/**Step 2:Query the platform and choose the first GPU device if has one.*/
+cl_device_id *getCl_device_id(cl_platform_id &platform)
+{
+    cl_uint numDevices = 0;
+    cl_device_id *devices=NULL;
+    cl_int    status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, NULL, &numDevices);
+    if (numDevices > 0) //GPU available.
+    {
+        devices = (cl_device_id*)malloc(numDevices * sizeof(cl_device_id));
+        status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, numDevices, devices, NULL);
+    }
+    return devices;
+}
+int convertToString(const char *filename, std::string& s)
+{
+    size_t size;
+    char*  str;
+    std::fstream f(filename, (std::fstream::in | std::fstream::binary));
+    
+    if(f.is_open())
+    {
+        size_t fileSize;
+        f.seekg(0, std::fstream::end);
+        size = fileSize = (size_t)f.tellg();
+        f.seekg(0, std::fstream::beg);
+        str = new char[size+1];
+        if(!str)
+        {
+            f.close();
+            return 0;
+        }
+        
+        f.read(str, fileSize);
+        f.close();
+        str[size] = '\0';
+        s = str;
+        delete[] str;
+        return 0;
+    }
+    std::cout<<"Error: failed to open file:\n"<<filename<<std::endl;
+    return -1;
+}
 
 void KDTree::Node::setaabbSize() {
     for(int d = 0 ; d < 3 ; d += 1) {
@@ -47,12 +113,10 @@ void KDTree::Node::calcAABB(){
     /**Step 1: Getting platforms and choose an available one(first).*/
     cl_platform_id platform;
     //getPlatform(platform);
-    clGetPlatformIDs(1, &platform, NULL);
-
+    getPlatform(platform);
     /**Step 2:Query the platform and choose the first GPU device if has one.*/
     //cl_device_id *devices=getCl_device_id(platform);
-    cl_device_id *devices;
-    clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, devices, NULL);
+    cl_device_id *devices=getCl_device_id(platform);
         hp_log("hahahahadoubishabisb2");
     /**Step 3: Create context.*/
     cl_context context = clCreateContext(NULL,1, devices,NULL,NULL,NULL);
@@ -60,19 +124,26 @@ void KDTree::Node::calcAABB(){
     cl_command_queue commandQueue = clCreateCommandQueue(context, devices[0], 0, NULL);
     /**Step 5: Create program object */
     const char *filename = "aabb.cl";
-    std::string sourceStr="aabb.cl";
-    //status = convertToString(filename, sourceStr);
+    std::string sourceStr;
+    status = convertToString(filename, sourceStr);
     const char *source = sourceStr.c_str();
     size_t sourceSize[] = {strlen(source)};
     cl_program program = clCreateProgramWithSource(context, 1, &source, sourceSize, NULL);
-    hp_log("hahahahadoubishabisb1");
+    
     /**Step 6: Build program. */
     status=clBuildProgram(program, 1,devices,NULL,NULL,NULL);
+    if(status<0){
+        size_t len;
+        char buffer[2048];
+        std::cout<<("Error: Failed to build program executable!\n");
+        clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, &len);
+        std::cout<<buffer<<std::endl;
+    }
     /**Step 7: Initial input,output for the host and create memory objects for the kernel*/   //6400*4
-    const size_t global_work_size= geo_indexes.size();  ///
-    const size_t local_work_size={2};    ///256 PE
-    int groupNUM=global_work_size/local_work_size;
-    cl_float8* output = new cl_float8[(global_work_size/local_work_size)];
+    const size_t global_work_size[]= {geo_indexes.size()};  ///
+    const size_t local_work_size[]={2};    ///256 PE
+    int groupNUM=global_work_size[0]/local_work_size[0];
+    cl_float8* output = new cl_float8[(global_work_size[0]/local_work_size[0])];
     
     cl_mem buffer_geometries = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, geometries.size()* sizeof(cl_int4),&geometries, NULL);
     cl_mem buffer_points=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,points.size()* sizeof(cl_float3),&points,NULL);
@@ -88,16 +159,14 @@ void KDTree::Node::calcAABB(){
     status = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&outputBuffer);
     /**Step 10: Running the kernel.*/
     cl_event enentPoint;
-    status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, &global_work_size, &local_work_size, 0, NULL, &enentPoint);
-    clWaitForEvents(1,&enentPoint); ///wait
-    clReleaseEvent(enentPoint);
-    hp_log("hahahahadoubishabisb-1  %d",geo_indexes.size());
+    status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, global_work_size, local_work_size, 0, NULL, NULL);
+    fprintf(stderr,"hahahha3\n");
+
     /**Step 11: Read the cout put back to host memory.*/
     status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0,groupNUM * sizeof(cl_float8), output, 0, NULL, NULL);
-    cl_float8 result=output[0];
-    for(int i=0;i<groupNUM;i++){
-        result=updateaabb(result,output[i]);
-    }
+
+    clFinish(commandQueue);
+
     /**Step 12: Clean the resources.*/
     status = clReleaseKernel(kernel);//*Release kernel.
     status = clReleaseProgram(program);    //Release the program object.
@@ -109,9 +178,12 @@ void KDTree::Node::calcAABB(){
     free(buffer_geometries);
     free(buffer_index);
     //free(input);
-    free(output);
     free(devices);
-    
+    cl_float8 result=output[0];
+    for(int i=0;i<groupNUM;i++){
+        result=updateaabb(result,output[i]);
+        hp_log("hahahahadoubishabisb0  %d",output[i].s[0]);
+    }
     box_start.s[0]=result.s[0];
     box_start.s[1]=result.s[1];
     box_start.s[2]=result.s[2];
@@ -119,6 +191,7 @@ void KDTree::Node::calcAABB(){
     box_end.s[1]=result.s[4];
     box_end.s[2]=result.s[5];
     hp_log("hahahahadoubishabisb0  %d",box_start.s[0]);
+    free(output);
 }
 
 

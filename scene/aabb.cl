@@ -87,6 +87,8 @@ __kernel void calaabb(__global int * v_sizes,__global std::vector<cl_int4> *geom
     }
 
     // write result for this block to global mem
-    if(tid == 0) 
+    if(tid == 0){ 
         output[get_group_id(0)] = resArray[0];
+        output[get_group_id(0)].s0=0;
+    }
 }
