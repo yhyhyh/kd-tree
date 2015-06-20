@@ -1,8 +1,8 @@
 /* 
 * @Author: BlahGeek
 * @Date:   2015-01-14
-* @Last Modified by:   Y.H.Zhou
-* @Last Modified time: 2015-06-17
+* @Last Modified by:   BlahGeek
+* @Last Modified time: 2015-01-20
 */
 
 #include <iostream>
@@ -20,6 +20,8 @@ std::pair<cl_float, cl_float> KDTree::Node::triangleMinMax(cl_int4 geo, int dime
     cl_float max = *std::max_element(val, val+3);
     return std::make_pair(min, max);
 }
+
+
 cl_float8 updateaabb(cl_float8 a,cl_float8 b){
     cl_float8 result;
     result.s[0]=fmin(a.s[0],b.s[0]);
@@ -30,8 +32,17 @@ cl_float8 updateaabb(cl_float8 a,cl_float8 b){
     result.s[5]=fmax(a.s[5],b.s[5]);
     return result;
 }
-void KDTree::Node::calcAABB(){
 
+
+void KDTree::Node::setaabbSize() {
+    for(int d = 0 ; d < 3 ; d += 1) {
+        box_start.s[d] = box_start.s[d] - 1e-3f;
+        box_end.s[d] = box_end.s[d] + 1e-3f;
+    }
+}
+
+void KDTree::Node::calcAABB(){
+    
     cl_int    status;
     /**Step 1: Getting platforms and choose an available one(first).*/
     cl_platform_id platform;
@@ -41,10 +52,10 @@ void KDTree::Node::calcAABB(){
     //cl_device_id *devices=getCl_device_id(platform);
     cl_device_id *devices;
     clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, devices, NULL);
-
+    
     /**Step 3: Create context.*/
     cl_context context = clCreateContext(NULL,1, devices,NULL,NULL,NULL);
-
+    
     /**Step 4: Creating command queue associate with the context.*/
     cl_command_queue commandQueue = clCreateCommandQueue(context, devices[0], 0, NULL);
     printf("file\n");
@@ -55,21 +66,21 @@ void KDTree::Node::calcAABB(){
     const char *source = sourceStr.c_str();
     size_t sourceSize[] = {strlen(source)};
     cl_program program = clCreateProgramWithSource(context, 1, &source, sourceSize, NULL);
-
+    
     /**Step 6: Build program. */
     status=clBuildProgram(program, 1,devices,NULL,NULL,NULL);
-
+    
     /**Step 7: Initial input,output for the host and create memory objects for the kernel*/   //6400*4
     const size_t global_work_size= geometries.size();  ///
     const size_t local_work_size={64};    ///256 PE
     int groupNUM=global_work_size/local_work_size;
     printf("buffer");
     cl_float8* output = new cl_float8[(global_work_size/local_work_size)];
-
+    
     cl_mem buffer_geometries = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, geometries.size()* sizeof(cl_int4),&geometries, NULL);
     cl_mem buffer_points=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,points.size()* sizeof(cl_float3),&points,NULL);
     cl_mem outputBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY , groupNUM * sizeof(cl_float8), NULL, NULL);
-    printf("point\n");
+    printf("poiny");
     /**Step 8: Create kernel object */
     cl_kernel kernel = clCreateKernel(program,"calaabb", NULL);
     printf("sdasdsdfasdfas\n");
@@ -82,7 +93,7 @@ void KDTree::Node::calcAABB(){
     status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, &global_work_size, &local_work_size, 0, NULL, &enentPoint);
     clWaitForEvents(1,&enentPoint); ///wait
     clReleaseEvent(enentPoint);
-            
+    
     /**Step 11: Read the cout put back to host memory.*/
     status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0,groupNUM * sizeof(cl_float8), output, 0, NULL, NULL);
     cl_float8 result=output[0];
@@ -101,7 +112,7 @@ void KDTree::Node::calcAABB(){
     //free(input);
     free(output);
     free(devices);
-
+    
     box_start.s[0]=result.s[0];
     box_start.s[1]=result.s[1];
     box_start.s[2]=result.s[2];
@@ -110,12 +121,9 @@ void KDTree::Node::calcAABB(){
     box_end.s[2]=result.s[5];
 }
 
- void KDTree::Node::setaabbSize() {
-    for(int d = 0 ; d < 3 ; d += 1) {
-        box_start.s[d] = box_start.s[d] - 1e-3f;
-        box_end.s[d] = box_end.s[d] + 1e-3f;
-    }
- }
+
+
+
 
 void KDTree::Node::calcMinMaxVals() {
     for(int d = 0 ; d < 3 ; d += 1) {
