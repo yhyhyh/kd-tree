@@ -99,10 +99,10 @@ int convertToString(const char *filename, std::string& s)
     std::cout<<"Error: failed to open file:\n"<<filename<<std::endl;
     return -1;
 }
-void KDTree::Node::calcArray(){
+/*void KDTree::Node::calcArray(){
    
-}
-void KDTree::Node::setaabbSize() {
+}*/
+/*void KDTree::Node::setaabbSize() {
     for(int d = 0 ; d < 3 ; d += 1) {
         box_start.s[d] = box_start.s[d] - 1e-3f;
         box_end.s[d] = box_end.s[d] + 1e-3f;
@@ -112,19 +112,19 @@ void KDTree::Node::setaabbSize() {
 void KDTree::Node::calcAABB(){
 
     cl_int    status;
-    /**Step 1: Getting platforms and choose an available one(first).*/
+    ////Step 1: Getting platforms and choose an available one(first).
     cl_platform_id platform;
     //getPlatform(platform);
     getPlatform(platform);
-    /**Step 2:Query the platform and choose the first GPU device if has one.*/
+    ////Step 2:Query the platform and choose the first GPU device if has one.
     //cl_device_id *devices=getCl_device_id(platform);
     cl_device_id *devices=getCl_device_id(platform);
         hp_log("hahahahadoubishabisb2");
-    /**Step 3: Create context.*/
+    ////Step 3: Create context.
     cl_context context = clCreateContext(NULL,1, devices,NULL,NULL,NULL);
-    /**Step 4: Creating command queue associate with the context.*/
+    ////Step 4: Creating command queue associate with the context.
     cl_command_queue commandQueue = clCreateCommandQueue(context, devices[0], 0, NULL);
-    /**Step 5: Create program object */
+    ////Step 5: Create program object 
     const char *filename = "aabb.cl";
     std::string sourceStr;
     status = convertToString(filename, sourceStr);
@@ -150,7 +150,7 @@ void KDTree::Node::calcAABB(){
     
     
     
-    /**Step 6: Build program. */
+    ////Step 6: Build program. 
     status=clBuildProgram(program, 1,devices,NULL,NULL,NULL);
     if(status!=CL_SUCCESS){
         size_t len;
@@ -159,7 +159,7 @@ void KDTree::Node::calcAABB(){
         clGetProgramBuildInfo(program, devices[0], CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, &len);
         printf("%s\n", buffer);
     }
-    /**Step 7: Initial input,output for the host and create memory objects for the kernel*/   //6400*4
+    ////Step 7: Initial input,output for the host and create memory objects for the kernel  //6400*4
     const size_t global_work_size[]= {geo_indexes.size()};  ///
     const size_t local_work_size[]={2};    ///256 PE
     int groupNUM=global_work_size[0]/local_work_size[0];
@@ -170,25 +170,25 @@ void KDTree::Node::calcAABB(){
     cl_mem buffer_index=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,geo_indexes.size()* sizeof(cl_int),geo_indexes_Array,NULL);
     //cl_mem buffer_num=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,sizeof(cl_int),&num,NULL);
     cl_mem outputBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY , groupNUM * sizeof(cl_float8), NULL, NULL);
-    /**Step 8: Create kernel object */
+    ////Step 8: Create kernel object 
     cl_kernel kernel = clCreateKernel(program,"calaabb", NULL);
-    /**Step 9: Sets Kernel arguments.*/
+    ////Step 9: Sets Kernel arguments.
     status = clSetKernelArg(kernel, 0, sizeof(cl_mem),&buffer_geometries);
     status = clSetKernelArg(kernel, 1, sizeof(cl_mem),&buffer_points);
     status = clSetKernelArg(kernel, 2, sizeof(cl_mem),&buffer_index);
     status = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&outputBuffer);
     //status = clSetKernelArg(kernel, 4, sizeof(cl_mem), &buffer_num);
 
-    /**Step 10: Running the kernel.*/
+    ////Step 10: Running the kernel.
     cl_event enentPoint;
     status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, global_work_size, local_work_size, 0, NULL, NULL);
 
-    /**Step 11: Read the cout put back to host memory.*/
+    ////Step 11: Read the cout put back to host memory.
     status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0,groupNUM * sizeof(cl_float8), output, 0, NULL, NULL);
 
     clFinish(commandQueue);
 
-    /**Step 12: Clean the resources.*/
+    ////Step 12: Clean the resources.
     status = clReleaseKernel(kernel);//*Release kernel.
     status = clReleaseProgram(program);    //Release the program object.
     //status = clReleaseMemObject(inputBuffer);//Release mem object.
@@ -212,7 +212,7 @@ void KDTree::Node::calcAABB(){
     box_end.s[1]=result.s[4];
     box_end.s[2]=result.s[5];
     free(output);
-}
+}*/
 
 
 
@@ -290,6 +290,9 @@ std::pair<cl_float, cl_float> KDTree::Node::findBestSplit(int dimension) {
 
 void KDTree::split() {
     
+    int best_dimension;
+    cl_float best_pos[3]; cl_float best_val[3];
+
     std::queue<Node *> activeList;
     Node * now;
     activeList.push(this->root.get());
@@ -302,62 +305,109 @@ void KDTree::split() {
         if(now->geo_indexes.size() < LEAF_GEOMETRIES) {
             continue;
         }
+        printf("%d  ",now->geo_indexes.size());
 
-        cl_float no_split_cost = TRIANGLE_INTERSECT_COST * now->geo_indexes.size();
+        // Process Large Nodes. 
+        if (now->geo_indexes.size()>25){
 
-        cl_float best_pos[3]; cl_float best_val[3];
-        for(int d = 0 ; d < 3 ; d += 1) {
-            auto result = now->findBestSplit(d);
-            best_pos[d] = result.first;
-            best_val[d] = result.second;
+            printf("Large Node. \n");
+            printf("%f %f %f\n", now->box_start.s[0], now->box_start.s[1], now->box_start.s[2]);
+            printf("%f %f %f\n", now->box_end.s[0], now->box_end.s[1], now->box_end.s[2]);
+            cl_float no_split_cost = TRIANGLE_INTERSECT_COST * now->geo_indexes.size(); 
+            
+            for(int d = 0 ; d < 3 ; d += 1) {
+                if ((now->box_end.s[d]-now->box_start.s[d])>(now->box_end.s[(d+1)%3]-now->box_start.s[(d+1)%3]) &&
+                    (now->box_end.s[d]-now->box_start.s[d])>(now->box_end.s[(d+2)%3]-now->box_start.s[(d+2)%3])){
+
+                    best_dimension = d;
+                    best_pos[best_dimension] = (now->box_end.s[d]+now->box_start.s[d])/2;
+                }
+            }  
+            //fprintf(stderr, "%d\n", now->left->geo_indexes.size());
+            now->left = std::make_unique<KDTree::Node>(points, geometries);
+            now->right = std::make_unique<KDTree::Node>(points, geometries);
+            now->left->parent = now->right->parent = now;
+            now->left->box_start = now->right->box_start = now->box_start;
+            now->left->box_end = now->right->box_end = now->box_end;        
+
+            now->left->box_end.s[best_dimension] = best_pos[best_dimension];
+            now->right->box_start.s[best_dimension] = best_pos[best_dimension];     
+
+            for(auto & geo_index: now->geo_indexes) {
+                auto geo = now->geometries[geo_index];
+                std::vector<cl_float3> this_points = {points[geo.s[0]], points[geo.s[1]], points[geo.s[2]]};
+                if(!std::all_of(this_points.begin(), this_points.end(), [&](const cl_float3 & p) ->bool {
+                    return p.s[best_dimension] > best_pos[best_dimension];
+                })) now->left->geo_indexes.push_back(geo_index);
+                if(!std::all_of(this_points.begin(), this_points.end(), [&](const cl_float3 & p) ->bool {
+                    return p.s[best_dimension] < best_pos[best_dimension];
+                })) now->right->geo_indexes.push_back(geo_index);
+                // if(this->left->contain(geo, best_dimension)) this->left->geo_indexes.push_back(geo_index);
+                // if(this->right->contain(geo, best_dimension)) this->right->geo_indexes.push_back(geo_index);
+            }
+
         }
-        auto best_val_it = std::min_element(best_val, best_val + 3);
-        int best_dimension = best_val_it - best_val;
 
-        if(*best_val_it > no_split_cost) {
-            continue;
+        // Process Small Nodes. 
+        else {
+
+            printf("Small Node. \n");
+            cl_float no_split_cost = TRIANGLE_INTERSECT_COST * now->geo_indexes.size(); 
+
+            cl_float best_pos[3]; cl_float best_val[3];
+            for(int d = 0 ; d < 3 ; d += 1) {
+                auto result = now->findBestSplit(d);
+                best_pos[d] = result.first;
+                best_val[d] = result.second;
+            }
+            auto best_val_it = std::min_element(best_val, best_val + 3);
+            best_dimension = best_val_it - best_val;    
+
+            if(*best_val_it > no_split_cost) {
+                continue;
+            }   
+
+            if(best_pos[best_dimension] <= now->box_start.s[best_dimension] ||
+            best_pos[best_dimension] >= now->box_end.s[best_dimension]) {
+                continue;
+            }
+            //fprintf(stderr, "%d\n", now->left->geo_indexes.size());
+            now->left = std::make_unique<KDTree::Node>(points, geometries);
+            now->right = std::make_unique<KDTree::Node>(points, geometries);
+            now->left->parent = now->right->parent = now;
+            now->left->box_start = now->right->box_start = now->box_start;
+            now->left->box_end = now->right->box_end = now->box_end;        
+
+            now->left->box_end.s[best_dimension] = best_pos[best_dimension];
+            now->right->box_start.s[best_dimension] = best_pos[best_dimension];     
+
+            for(auto & geo_index: now->geo_indexes) {
+                auto geo = now->geometries[geo_index];
+                std::vector<cl_float3> this_points = {points[geo.s[0]], points[geo.s[1]], points[geo.s[2]]};
+                if(!std::all_of(this_points.begin(), this_points.end(), [&](const cl_float3 & p) ->bool {
+                    return p.s[best_dimension] > best_pos[best_dimension];
+                })) now->left->geo_indexes.push_back(geo_index);
+                if(!std::all_of(this_points.begin(), this_points.end(), [&](const cl_float3 & p) ->bool {
+                    return p.s[best_dimension] < best_pos[best_dimension];
+                })) now->right->geo_indexes.push_back(geo_index);
+                // if(this->left->contain(geo, best_dimension)) this->left->geo_indexes.push_back(geo_index);
+                // if(this->right->contain(geo, best_dimension)) this->right->geo_indexes.push_back(geo_index);
+            }
         }
 
-        if(best_pos[best_dimension] <= now->box_start.s[best_dimension] ||
-        best_pos[best_dimension] >= now->box_end.s[best_dimension]) {
-            continue;
-        }
-        fprintf(stderr, "%d\n", now->left->geo_indexes.size());
-        now->left = std::make_unique<KDTree::Node>(points, geometries);
-        now->right = std::make_unique<KDTree::Node>(points, geometries);
-        now->left->parent = now->right->parent = now;
-        now->left->box_start = now->right->box_start = now->box_start;
-        now->left->box_end = now->right->box_end = now->box_end;
-
-        now->left->box_end.s[best_dimension] = best_pos[best_dimension];
-        now->right->box_start.s[best_dimension] = best_pos[best_dimension];
-
-        for(auto & geo_index: now->geo_indexes) {
-            auto geo = now->geometries[geo_index];
-            std::vector<cl_float3> this_points = {points[geo.s[0]], points[geo.s[1]], points[geo.s[2]]};
-            if(!std::all_of(this_points.begin(), this_points.end(), [&](const cl_float3 & p) ->bool {
-                return p.s[best_dimension] > best_pos[best_dimension];
-            })) now->left->geo_indexes.push_back(geo_index);
-            if(!std::all_of(this_points.begin(), this_points.end(), [&](const cl_float3 & p) ->bool {
-                return p.s[best_dimension] < best_pos[best_dimension];
-            })) now->right->geo_indexes.push_back(geo_index);
-            // if(this->left->contain(geo, best_dimension)) this->left->geo_indexes.push_back(geo_index);
-            // if(this->right->contain(geo, best_dimension)) this->right->geo_indexes.push_back(geo_index);
-        }
         now->geo_indexes.clear();
 
-        now->left->calcAABB();
+        now->left->calcMinMaxVals();
+        //now->left->calcAABB();
         activeList.push(now->left.get());
         // this->left->setBoxSize();
-        now->left->setaabbSize();
-        //this->left->split();
+        //now->left->setaabbSize();
 
-        //now->right->calcMinMaxVals();
-        now->right->calcAABB();
+        now->right->calcMinMaxVals();
+        //now->right->calcAABB();
         activeList.push(now->right.get());
         // this->right->setBoxSize();
-        now->right->setaabbSize();
-        //this->right->split();
+        //now->right->setaabbSize();
     }
 }
 
@@ -429,8 +479,10 @@ KDTree::KDTree(std::string filename): Scene(filename) {
     this->root = std::make_unique<KDTree::Node>(this->points, this->geometries);
     for(size_t i = 0 ; i < this->geometries.size() ; i += 1)
         this->root->geo_indexes.push_back(i);
-    this->root->calcAABB();
-    this->root->setaabbSize();
+    //this->root->calcAABB();
+    //this->root->setaabbSize();
+    this->root->calcMinMaxVals();
+    this->root->setBoxSize();
     this->split();
     this->root->removeEmptyNode();
 
