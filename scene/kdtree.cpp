@@ -20,6 +20,68 @@ std::pair<cl_float, cl_float> KDTree::Node::triangleMinMax(cl_int4 geo, int dime
     cl_float max = *std::max_element(val, val+3);
     return std::make_pair(min, max);
 }
+cl_float8 updateaabb(cl_float8 a,cl_float8 b){
+    cl_float8 result;
+    result.s[0]=fmin(a.s[0],b.s[0]);
+    result.s[1]=fmin(a.s[1],b.s[1]);
+    result.s[2]=fmin(a.s[2],b.s[2]);
+    result.s[3]=fmax(a.s[3],b.s[3]);
+    result.s[4]=fmax(a.s[4],b.s[4]);
+    result.s[5]=fmax(a.s[5],b.s[5]);
+    return result;
+}
+/*void KDTree::Node::calcAABB(){
+ cl::Program program;
+ std::string sources;
+ cl::Context context;
+ std::vector<cl::Device> devices;
+ 
+ context = cl::Context(CL_DEVICE_TYPE_GPU);
+ devices = context.getInfo<CL_CONTEXT_DEVICES>();
+ sources.resize(src_hp_cl_src_types_h_cl_len + src_hp_scene_cl_src_kernel_cl_len);
+ memcpy(static_cast<void *>(&sources.front()),
+ src_hp_cl_src_types_h_cl, src_hp_cl_src_types_h_cl_len);
+ memcpy(static_cast<void *>(&sources.front() + src_hp_cl_src_types_h_cl_len),
+ src_hp_scene_cl_src_kernel_cl, src_hp_scene_cl_src_kernel_cl_len);
+ program = cl::Program(context, sources);
+ program.build(devices);
+ 
+ 
+ cl_command_queue queue = cl_command_queue(context, devices[0]);
+ 
+ auto global_work_size= geometries.size();
+ auto local_work_size= 64;
+ size_t groupNUM=global_work_size/local_work_size;
+ cl::Buffer data_initial_mem(context, CL_MEM_READ_WRITE,
+ sizeof(unit_data) * global_work_size);
+ cl_kernel kernel_set(program, "calaabb");
+ cl_float8 * output = new cl_float8[(global_work_size/local_work_size)];
+ clSetKernelArgs(kernel_set, geometries,points,output);
+ cl_event enentPoint;
+ clEnqueueNDRangeKernel(queue, kernel_set, 1, NULL, global_work_size, local_work_size, 0, NULL, &enentPoint);
+ 
+ 
+ cl_float8 result=output[0];
+ queue.finish();
+ for(int i=0;i<global_work_size/local_work_size;i++){
+ result=updateaabb(result,output[i]);
+ }
+ box_start.s[0]=result.s[0];
+ box_start.s[1]=result.s[1];
+ box_start.s[2]=result.s[2];
+ box_end.s[0]=result.s[3];
+ box_end.s[1]=result.s[4];
+ box_end.s[2]=result.s[5];
+ 
+ }
+ 
+ void KDTree::Node::setaabbSize() {
+ for(int d = 0 ; d < 3 ; d += 1) {
+ box_start.s[d] = box_start.s[d] - 1e-3f;
+ box_end.s[d] = box_end.s[d] + 1e-3f;
+ }
+ }
+ */
 
 void KDTree::Node::calcMinMaxVals() {
     for(int d = 0 ; d < 3 ; d += 1) {
