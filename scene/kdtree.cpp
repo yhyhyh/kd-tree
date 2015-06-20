@@ -325,14 +325,18 @@ void KDTree::split() {
             // if(this->right->contain(geo, best_dimension)) this->right->geo_indexes.push_back(geo_index);
         }
         now->geo_indexes.clear();
+
         now->left->calcAABB();
         activeList.push(now->left.get());
         // this->left->setBoxSize();
+        now->left->setaabbSize();
         //this->left->split();
 
-        now->right->calcMinMaxVals();
+        //now->right->calcMinMaxVals();
+        now->right->calcAABB();
         activeList.push(now->right.get());
         // this->right->setBoxSize();
+        now->right->setaabbSize();
         //this->right->split();
     }
 }
