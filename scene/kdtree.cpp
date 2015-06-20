@@ -99,7 +99,9 @@ int convertToString(const char *filename, std::string& s)
     std::cout<<"Error: failed to open file:\n"<<filename<<std::endl;
     return -1;
 }
-
+void KDTree::Node::calcArray(){
+   
+}
 void KDTree::Node::setaabbSize() {
     for(int d = 0 ; d < 3 ; d += 1) {
         box_start.s[d] = box_start.s[d] - 1e-3f;
@@ -108,7 +110,7 @@ void KDTree::Node::setaabbSize() {
 }
 
 void KDTree::Node::calcAABB(){
-    hp_log("hahahahadoubishabisb3");
+
     cl_int    status;
     /**Step 1: Getting platforms and choose an available one(first).*/
     cl_platform_id platform;
@@ -130,37 +132,56 @@ void KDTree::Node::calcAABB(){
     size_t sourceSize[] = {strlen(source)};
     cl_program program = clCreateProgramWithSource(context, 1, &source, sourceSize, NULL);
     
+    
+    
+    cl_int4 * geometries_Array=new cl_int4[geometries.size()];
+    cl_float3 * points_Array=new cl_float3[points.size()];
+    cl_int * geo_indexes_Array=new cl_int[geo_indexes.size()];
+    for(int i=0;i<geo_indexes.size();i++)
+        geo_indexes_Array[i]=geo_indexes[i];
+    for(int i=0;i<geometries.size();i++)
+        geometries_Array[i]=geometries[i];
+    for(int i=0;i<points.size();i++)
+        points_Array[i]=points[i];
+    
+    
+    
+    
+    
+    
+    
     /**Step 6: Build program. */
     status=clBuildProgram(program, 1,devices,NULL,NULL,NULL);
-    if(status<0){
+    if(status!=CL_SUCCESS){
         size_t len;
-        char buffer[2048];
-        std::cout<<("Error: Failed to build program executable!\n");
-        clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, &len);
-        std::cout<<buffer<<std::endl;
+        char buffer[8 * 1024];
+        printf("Error: Failed to build program executable!\n");
+        clGetProgramBuildInfo(program, devices[0], CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, &len);
+        printf("%s\n", buffer);
     }
     /**Step 7: Initial input,output for the host and create memory objects for the kernel*/   //6400*4
     const size_t global_work_size[]= {geo_indexes.size()};  ///
     const size_t local_work_size[]={2};    ///256 PE
     int groupNUM=global_work_size[0]/local_work_size[0];
+    int num=geo_indexes.size();
     cl_float8* output = new cl_float8[(global_work_size[0]/local_work_size[0])];
-    
-    cl_mem buffer_geometries = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, geometries.size()* sizeof(cl_int4),&geometries, NULL);
-    cl_mem buffer_points=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,points.size()* sizeof(cl_float3),&points,NULL);
-    cl_mem buffer_index=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,geo_indexes.size()* sizeof(cl_int),&geo_indexes,NULL);
+    cl_mem buffer_geometries = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, geometries.size()* sizeof(cl_int4),geometries_Array, NULL);
+    cl_mem buffer_points=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,points.size()* sizeof(cl_float3),points_Array,NULL);
+    cl_mem buffer_index=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,geo_indexes.size()* sizeof(cl_int),geo_indexes_Array,NULL);
+    //cl_mem buffer_num=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,sizeof(cl_int),&num,NULL);
     cl_mem outputBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY , groupNUM * sizeof(cl_float8), NULL, NULL);
     /**Step 8: Create kernel object */
     cl_kernel kernel = clCreateKernel(program,"calaabb", NULL);
-    fprintf(stderr,"sdasdsdfasdfas\n");
     /**Step 9: Sets Kernel arguments.*/
-    status = clSetKernelArg(kernel, 0, sizeof(cl_mem),buffer_geometries);
-    status = clSetKernelArg(kernel, 1, sizeof(cl_mem),buffer_points);
-    status = clSetKernelArg(kernel, 2, sizeof(cl_mem),buffer_index);
+    status = clSetKernelArg(kernel, 0, sizeof(cl_mem),&buffer_geometries);
+    status = clSetKernelArg(kernel, 1, sizeof(cl_mem),&buffer_points);
+    status = clSetKernelArg(kernel, 2, sizeof(cl_mem),&buffer_index);
     status = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&outputBuffer);
+    //status = clSetKernelArg(kernel, 4, sizeof(cl_mem), &buffer_num);
+
     /**Step 10: Running the kernel.*/
     cl_event enentPoint;
     status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, global_work_size, local_work_size, 0, NULL, NULL);
-    fprintf(stderr,"hahahha3\n");
 
     /**Step 11: Read the cout put back to host memory.*/
     status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0,groupNUM * sizeof(cl_float8), output, 0, NULL, NULL);
@@ -190,7 +211,6 @@ void KDTree::Node::calcAABB(){
     box_end.s[0]=result.s[3];
     box_end.s[1]=result.s[4];
     box_end.s[2]=result.s[5];
-    hp_log("hahahahadoubishabisb0  %d",box_start.s[0]);
     free(output);
 }
 
