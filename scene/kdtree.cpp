@@ -24,14 +24,15 @@ std::pair<cl_float, cl_float> KDTree::Node::triangleMinMax(cl_int4 geo, int dime
 
 cl_float8 updateaabb(cl_float8 a,cl_float8 b){
     cl_float8 result;
-    result.s[0]=fmin(a.s[0],b.s[0]);
-    result.s[1]=fmin(a.s[1],b.s[1]);
-    result.s[2]=fmin(a.s[2],b.s[2]);
-    result.s[3]=fmax(a.s[3],b.s[3]);
-    result.s[4]=fmax(a.s[4],b.s[4]);
-    result.s[5]=fmax(a.s[5],b.s[5]);
+    result.s[0]=(a.s[0]>b.s[0])?b.s[0]:a.s[0];
+    result.s[1]=(a.s[1]>b.s[1])?b.s[1]:a.s[1];
+    result.s[2]=(a.s[2]>b.s[2])?b.s[2]:a.s[2];
+    result.s[3]=(a.s[3]>b.s[3])?a.s[3]:b.s[3];
+    result.s[4]=(a.s[4]>b.s[4])?a.s[4]:b.s[4];
+    result.s[5]=(a.s[5]>b.s[5])?a.s[5]:b.s[5];
     return result;
 }
+
 int getPlatform(cl_platform_id &platform)
 {
     platform = NULL;//the chosen platform
@@ -102,7 +103,8 @@ int convertToString(const char *filename, std::string& s)
 /*void KDTree::Node::calcArray(){
    
 }*/
-/*void KDTree::Node::setaabbSize() {
+/*
+void KDTree::Node::setaabbSize() {
     for(int d = 0 ; d < 3 ; d += 1) {
         box_start.s[d] = box_start.s[d] - 1e-3f;
         box_end.s[d] = box_end.s[d] + 1e-3f;
@@ -110,21 +112,20 @@ int convertToString(const char *filename, std::string& s)
 }
 
 void KDTree::Node::calcAABB(){
-
+    
     cl_int    status;
-    ////Step 1: Getting platforms and choose an available one(first).
+    //Step 1: Getting platforms and choose an available one(first).
     cl_platform_id platform;
     //getPlatform(platform);
     getPlatform(platform);
-    ////Step 2:Query the platform and choose the first GPU device if has one.
+    //Step 2:Query the platform and choose the first GPU device if has one.
     //cl_device_id *devices=getCl_device_id(platform);
     cl_device_id *devices=getCl_device_id(platform);
-        hp_log("hahahahadoubishabisb2");
-    ////Step 3: Create context.
+    //Step 3: Create context.
     cl_context context = clCreateContext(NULL,1, devices,NULL,NULL,NULL);
-    ////Step 4: Creating command queue associate with the context.
+    //Step 4: Creating command queue associate with the context.
     cl_command_queue commandQueue = clCreateCommandQueue(context, devices[0], 0, NULL);
-    ////Step 5: Create program object 
+    //Step 5: Create program object
     const char *filename = "aabb.cl";
     std::string sourceStr;
     status = convertToString(filename, sourceStr);
@@ -145,12 +146,7 @@ void KDTree::Node::calcAABB(){
         points_Array[i]=points[i];
     
     
-    
-    
-    
-    
-    
-    ////Step 6: Build program. 
+    //Step 6: Build program.
     status=clBuildProgram(program, 1,devices,NULL,NULL,NULL);
     if(status!=CL_SUCCESS){
         size_t len;
@@ -159,7 +155,7 @@ void KDTree::Node::calcAABB(){
         clGetProgramBuildInfo(program, devices[0], CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, &len);
         printf("%s\n", buffer);
     }
-    ////Step 7: Initial input,output for the host and create memory objects for the kernel  //6400*4
+    //Step 7: Initial input,output for the host and create memory objects for the kernel   //6400*4
     const size_t global_work_size[]= {geo_indexes.size()};  ///
     const size_t local_work_size[]={2};    ///256 PE
     int groupNUM=global_work_size[0]/local_work_size[0];
@@ -170,26 +166,49 @@ void KDTree::Node::calcAABB(){
     cl_mem buffer_index=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,geo_indexes.size()* sizeof(cl_int),geo_indexes_Array,NULL);
     //cl_mem buffer_num=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,sizeof(cl_int),&num,NULL);
     cl_mem outputBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY , groupNUM * sizeof(cl_float8), NULL, NULL);
-    ////Step 8: Create kernel object 
+    //Step 8: Create kernel object
     cl_kernel kernel = clCreateKernel(program,"calaabb", NULL);
-    ////Step 9: Sets Kernel arguments.
+    //Step 9: Sets Kernel arguments.
     status = clSetKernelArg(kernel, 0, sizeof(cl_mem),&buffer_geometries);
     status = clSetKernelArg(kernel, 1, sizeof(cl_mem),&buffer_points);
     status = clSetKernelArg(kernel, 2, sizeof(cl_mem),&buffer_index);
     status = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void *)&outputBuffer);
     //status = clSetKernelArg(kernel, 4, sizeof(cl_mem), &buffer_num);
-
-    ////Step 10: Running the kernel.
+    
+    //Step 10: Running the kernel.
     cl_event enentPoint;
     status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, global_work_size, local_work_size, 0, NULL, NULL);
-
-    ////Step 11: Read the cout put back to host memory.
+    
+    //Step 11: Read the cout put back to host memory.
     status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0,groupNUM * sizeof(cl_float8), output, 0, NULL, NULL);
-
+    
     clFinish(commandQueue);
-
-    ////Step 12: Clean the resources.
-    status = clReleaseKernel(kernel);//*Release kernel.
+    
+    cl_float8 result;
+    result.s[0]=output[0].s[0];
+    result.s[1]=output[0].s[1];
+    result.s[2]=output[0].s[2];
+    result.s[3]=output[0].s[3];
+    result.s[4]=output[0].s[4];
+    result.s[5]=output[0].s[5];
+    for(int i=0;i < groupNUM;i++){
+        result=updateaabb(result,output[i]);
+    }
+    box_start.s[0]=result.s[0];
+    box_start.s[1]=result.s[1];
+    box_start.s[2]=result.s[2];
+    box_end.s[0]=result.s[3];
+    box_end.s[1]=result.s[4];
+    box_end.s[2]=result.s[5];
+    
+    hp_log("box_start:%lf",box_start.s[0]);
+    hp_log("box_start:%lf",box_start.s[1]);
+    hp_log("box_start:%lf",box_start.s[2]);
+    hp_log("box_end:%lf",box_end.s[0]);
+    hp_log("box_end:%lf",box_end.s[1]);
+    hp_log("box_end:%lf",box_end.s[2]);
+    free(output);
+    status = clReleaseKernel(kernel);//Release kernel.
     status = clReleaseProgram(program);    //Release the program object.
     //status = clReleaseMemObject(inputBuffer);//Release mem object.
     status = clReleaseMemObject(outputBuffer);
@@ -200,21 +219,8 @@ void KDTree::Node::calcAABB(){
     free(buffer_index);
     //free(input);
     free(devices);
-    cl_float8 result=output[0];
-    for(int i=0;i<groupNUM;i++){
-        result=updateaabb(result,output[i]);
-        hp_log("hahahahadoubishabisb0  %d",output[i].s[0]);
-    }
-    box_start.s[0]=result.s[0];
-    box_start.s[1]=result.s[1];
-    box_start.s[2]=result.s[2];
-    box_end.s[0]=result.s[3];
-    box_end.s[1]=result.s[4];
-    box_end.s[2]=result.s[5];
-    free(output);
-}*/
-
-
+}
+*/
 
 
 
