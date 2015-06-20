@@ -47,13 +47,12 @@ inline float8 _handleone(int4 geometries,__global float3 * points){
 }
 inline float8 _updateaabb(float8 a,float8 b){
     float8 result;
-    result.s0=fmin(a.s0,b.s0);
-    result.s1=fmin(a.s1,b.s1);
-    result.s2=fmin(a.s2,b.s2);
-    result.s3=fmax(a.s3,b.s3);
-    result.s4=fmax(a.s4,b.s4);
-    result.s5=fmax(a.s5,b.s5);
-    //printf("a %f\tb %f\n",a.s0,b.s0);
+    result.s0=(a.s0>b.s0)?b.s0:a.s0;
+    result.s1=(a.s1>b.s1)?b.s1:a.s1;
+    result.s2=(a.s2>b.s2)?b.s2:a.s2;
+    result.s3=(a.s3>b.s3)?a.s3:b.s3;
+    result.s4=(a.s4>b.s4)?a.s4:b.s4;
+    result.s5=(a.s5>b.s5)?a.s5:b.s5;
     return result;
 }
 __kernel void calaabb(__global int4 *geometries,__global float3 * points,__global int * geo_indexes,__global float8 *output){
@@ -64,7 +63,12 @@ __kernel void calaabb(__global int4 *geometries,__global float3 * points,__globa
     float8 res;
     unsigned int localSize = get_local_size(0); 
     unsigned int globalSize= get_global_size(0);
-    printf("num:%d\n",sizeof(geo_indexes));
+    int num=globalSize;
+    //printf("num:%d\n",);
+    
+    
+    
+    
     
     res.s0=points[geometries[geo_indexes[0]].s0].s0;
     res.s1=points[geometries[geo_indexes[0]].s0].s1;
@@ -72,7 +76,6 @@ __kernel void calaabb(__global int4 *geometries,__global float3 * points,__globa
     res.s3=points[geometries[geo_indexes[0]].s0].s0;
     res.s4=points[geometries[geo_indexes[0]].s0].s1;
     res.s5=points[geometries[geo_indexes[0]].s0].s2;
-    
     while(i<num){
         float8 tmp=_handleone(geometries[geo_indexes[i]],points);
         res=_updateaabb(tmp,res);
@@ -80,7 +83,9 @@ __kernel void calaabb(__global int4 *geometries,__global float3 * points,__globa
 }
     resArray[tid]=res;
     barrier(CLK_LOCAL_MEM_FENCE);
-
+//    printf("checkf10:%f %d %d\n",resArray[tid].s3,i-globalSize,tid);
+//    printf("checkf9:%f %d %d\n",resArray[tid].s4,i-globalSize,tid);
+//    printf("checkf8:%f %d %d\n",resArray[tid].s5,i-globalSize,tid);
     // do reduction in shared mem
     for(unsigned int s = localSize >> 1;s > 0; s >>= 1) 
     {
@@ -95,7 +100,7 @@ __kernel void calaabb(__global int4 *geometries,__global float3 * points,__globa
     // write result for this block to global mem
     if(tid == 0){
         output[bid] = resArray[0];
-        printf("%d\t%lf\n",bid,output[2].s0);
+        //printf("%d\t%lf\n",bid,output[bid].s5);
         //output[bid].s0=0;
     }
 }
