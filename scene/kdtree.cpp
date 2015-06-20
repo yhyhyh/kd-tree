@@ -30,58 +30,92 @@ cl_float8 updateaabb(cl_float8 a,cl_float8 b){
     result.s[5]=fmax(a.s[5],b.s[5]);
     return result;
 }
-/*void KDTree::Node::calcAABB(){
- cl::Program program;
- std::string sources;
- cl::Context context;
- std::vector<cl::Device> devices;
- 
- context = cl::Context(CL_DEVICE_TYPE_GPU);
- devices = context.getInfo<CL_CONTEXT_DEVICES>();
- sources.resize(src_hp_cl_src_types_h_cl_len + src_hp_scene_cl_src_kernel_cl_len);
- memcpy(static_cast<void *>(&sources.front()),
- src_hp_cl_src_types_h_cl, src_hp_cl_src_types_h_cl_len);
- memcpy(static_cast<void *>(&sources.front() + src_hp_cl_src_types_h_cl_len),
- src_hp_scene_cl_src_kernel_cl, src_hp_scene_cl_src_kernel_cl_len);
- program = cl::Program(context, sources);
- program.build(devices);
- 
- 
- cl_command_queue queue = cl_command_queue(context, devices[0]);
- 
- auto global_work_size= geometries.size();
- auto local_work_size= 64;
- size_t groupNUM=global_work_size/local_work_size;
- cl::Buffer data_initial_mem(context, CL_MEM_READ_WRITE,
- sizeof(unit_data) * global_work_size);
- cl_kernel kernel_set(program, "calaabb");
- cl_float8 * output = new cl_float8[(global_work_size/local_work_size)];
- clSetKernelArgs(kernel_set, geometries,points,output);
- cl_event enentPoint;
- clEnqueueNDRangeKernel(queue, kernel_set, 1, NULL, global_work_size, local_work_size, 0, NULL, &enentPoint);
- 
- 
- cl_float8 result=output[0];
- queue.finish();
- for(int i=0;i<global_work_size/local_work_size;i++){
- result=updateaabb(result,output[i]);
- }
- box_start.s[0]=result.s[0];
- box_start.s[1]=result.s[1];
- box_start.s[2]=result.s[2];
- box_end.s[0]=result.s[3];
- box_end.s[1]=result.s[4];
- box_end.s[2]=result.s[5];
- 
- }
- 
+void KDTree::Node::calcAABB(){
+
+    cl_int    status;
+    /**Step 1: Getting platforms and choose an available one(first).*/
+    cl_platform_id platform;
+    //getPlatform(platform);
+    clGetPlatformIDs(1, &platform, NULL);
+    /**Step 2:Query the platform and choose the first GPU device if has one.*/
+    //cl_device_id *devices=getCl_device_id(platform);
+    cl_device_id *devices;
+    clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, devices, NULL);
+
+    /**Step 3: Create context.*/
+    cl_context context = clCreateContext(NULL,1, devices,NULL,NULL,NULL);
+
+    /**Step 4: Creating command queue associate with the context.*/
+    cl_command_queue commandQueue = clCreateCommandQueue(context, devices[0], 0, NULL);
+    printf("file\n");
+    /**Step 5: Create program object */
+    const char *filename = "aabb.cl";
+    std::string sourceStr="aabb.cl";
+    //status = convertToString(filename, sourceStr);
+    const char *source = sourceStr.c_str();
+    size_t sourceSize[] = {strlen(source)};
+    cl_program program = clCreateProgramWithSource(context, 1, &source, sourceSize, NULL);
+
+    /**Step 6: Build program. */
+    status=clBuildProgram(program, 1,devices,NULL,NULL,NULL);
+
+    /**Step 7: Initial input,output for the host and create memory objects for the kernel*/   //6400*4
+    const size_t global_work_size= geometries.size();  ///
+    const size_t local_work_size={64};    ///256 PE
+    int groupNUM=global_work_size/local_work_size;
+    printf("buffer");
+    cl_float8* output = new cl_float8[(global_work_size/local_work_size)];
+
+    cl_mem buffer_geometries = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, geometries.size()* sizeof(cl_int4),&geometries, NULL);
+    cl_mem buffer_points=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,points.size()* sizeof(cl_float3),&points,NULL);
+    cl_mem outputBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY , groupNUM * sizeof(cl_float8), NULL, NULL);
+    printf("point\n");
+    /**Step 8: Create kernel object */
+    cl_kernel kernel = clCreateKernel(program,"calaabb", NULL);
+    printf("sdasdsdfasdfas\n");
+    /**Step 9: Sets Kernel arguments.*/
+    status = clSetKernelArg(kernel, 0, sizeof(cl_mem),buffer_geometries);
+    status = clSetKernelArg(kernel, 1, sizeof(cl_mem),buffer_points);
+    status = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&outputBuffer);
+    /**Step 10: Running the kernel.*/
+    cl_event enentPoint;
+    status = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, &global_work_size, &local_work_size, 0, NULL, &enentPoint);
+    clWaitForEvents(1,&enentPoint); ///wait
+    clReleaseEvent(enentPoint);
+            
+    /**Step 11: Read the cout put back to host memory.*/
+    status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0,groupNUM * sizeof(cl_float8), output, 0, NULL, NULL);
+    cl_float8 result=output[0];
+    for(int i=0;i<global_work_size/local_work_size;i++){
+        result=updateaabb(result,output[i]);
+    }
+    /**Step 12: Clean the resources.*/
+    status = clReleaseKernel(kernel);//*Release kernel.
+    status = clReleaseProgram(program);    //Release the program object.
+    //status = clReleaseMemObject(inputBuffer);//Release mem object.
+    status = clReleaseMemObject(outputBuffer);
+    status = clReleaseCommandQueue(commandQueue);//Release  Command queue.
+    status = clReleaseContext(context);//Release context.
+    free(buffer_points);
+    free(buffer_geometries);
+    //free(input);
+    free(output);
+    free(devices);
+
+    box_start.s[0]=result.s[0];
+    box_start.s[1]=result.s[1];
+    box_start.s[2]=result.s[2];
+    box_end.s[0]=result.s[3];
+    box_end.s[1]=result.s[4];
+    box_end.s[2]=result.s[5];
+}
+
  void KDTree::Node::setaabbSize() {
- for(int d = 0 ; d < 3 ; d += 1) {
- box_start.s[d] = box_start.s[d] - 1e-3f;
- box_end.s[d] = box_end.s[d] + 1e-3f;
+    for(int d = 0 ; d < 3 ; d += 1) {
+        box_start.s[d] = box_start.s[d] - 1e-3f;
+        box_end.s[d] = box_end.s[d] + 1e-3f;
+    }
  }
- }
- */
 
 void KDTree::Node::calcMinMaxVals() {
     for(int d = 0 ; d < 3 ; d += 1) {

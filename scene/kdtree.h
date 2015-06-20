@@ -43,7 +43,8 @@ namespace hp {
             void setBoxSize();
             // return split position and cost value
             std::pair<cl_float, cl_float> findBestSplit(int dimension);
-
+            void calcAABB();
+            void setaabbSize();
             void removeEmptyNode();
 
             int debugPrint(int depth=0, int id = 0);
