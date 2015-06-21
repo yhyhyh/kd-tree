@@ -30,6 +30,7 @@ cl_float8 updateaabb(cl_float8 a,cl_float8 b){
     result.s[3]=(a.s[3]>b.s[3])?a.s[3]:b.s[3];
     result.s[4]=(a.s[4]>b.s[4])?a.s[4]:b.s[4];
     result.s[5]=(a.s[5]>b.s[5])?a.s[5]:b.s[5];
+
     return result;
 }
 
@@ -100,10 +101,10 @@ int convertToString(const char *filename, std::string& s)
     std::cout<<"Error: failed to open file:\n"<<filename<<std::endl;
     return -1;
 }
-/*void KDTree::Node::calcArray(){
+void KDTree::Node::calcArray(){
    
-}*/
-/*
+}
+
 void KDTree::Node::setaabbSize() {
     for(int d = 0 ; d < 3 ; d += 1) {
         box_start.s[d] = box_start.s[d] - 1e-3f;
@@ -125,6 +126,10 @@ void KDTree::Node::calcAABB(){
     cl_context context = clCreateContext(NULL,1, devices,NULL,NULL,NULL);
     //Step 4: Creating command queue associate with the context.
     cl_command_queue commandQueue = clCreateCommandQueue(context, devices[0], 0, NULL);
+    size_t global_work_size[]= {geo_indexes.size()};  ///
+    size_t local_work_size[]={2};    ///256 PE
+    int groupNUM=global_work_size[0]/local_work_size[0];
+    int num=geo_indexes.size();
     //Step 5: Create program object
     const char *filename = "aabb.cl";
     std::string sourceStr;
@@ -146,6 +151,16 @@ void KDTree::Node::calcAABB(){
         points_Array[i]=points[i];
     
     
+    if(geo_indexes.size()%2)
+    {
+        geo_indexes_Array[geo_indexes.size()]=geo_indexes_Array[geo_indexes.size()-1];
+        hp_log("%d",geo_indexes.size());
+        global_work_size[0]++;
+        groupNUM++;
+        num++;
+    }
+    
+    
     //Step 6: Build program.
     status=clBuildProgram(program, 1,devices,NULL,NULL,NULL);
     if(status!=CL_SUCCESS){
@@ -156,16 +171,20 @@ void KDTree::Node::calcAABB(){
         printf("%s\n", buffer);
     }
     //Step 7: Initial input,output for the host and create memory objects for the kernel   //6400*4
-    const size_t global_work_size[]= {geo_indexes.size()};  ///
-    const size_t local_work_size[]={2};    ///256 PE
-    int groupNUM=global_work_size[0]/local_work_size[0];
-    int num=geo_indexes.size();
+
+    
+    
+    
     cl_float8* output = new cl_float8[(global_work_size[0]/local_work_size[0])];
     cl_mem buffer_geometries = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, geometries.size()* sizeof(cl_int4),geometries_Array, NULL);
+    
     cl_mem buffer_points=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,points.size()* sizeof(cl_float3),points_Array,NULL);
+    
     cl_mem buffer_index=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,geo_indexes.size()* sizeof(cl_int),geo_indexes_Array,NULL);
+    
     //cl_mem buffer_num=clCreateBuffer(context,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,sizeof(cl_int),&num,NULL);
     cl_mem outputBuffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY , groupNUM * sizeof(cl_float8), NULL, NULL);
+    
     //Step 8: Create kernel object
     cl_kernel kernel = clCreateKernel(program,"calaabb", NULL);
     //Step 9: Sets Kernel arguments.
@@ -183,7 +202,6 @@ void KDTree::Node::calcAABB(){
     status = clEnqueueReadBuffer(commandQueue, outputBuffer, CL_TRUE, 0,groupNUM * sizeof(cl_float8), output, 0, NULL, NULL);
     
     clFinish(commandQueue);
-    
     cl_float8 result;
     result.s[0]=output[0].s[0];
     result.s[1]=output[0].s[1];
@@ -191,22 +209,17 @@ void KDTree::Node::calcAABB(){
     result.s[3]=output[0].s[3];
     result.s[4]=output[0].s[4];
     result.s[5]=output[0].s[5];
+    
     for(int i=0;i < groupNUM;i++){
         result=updateaabb(result,output[i]);
     }
-    box_start.s[0]=result.s[0];
-    box_start.s[1]=result.s[1];
-    box_start.s[2]=result.s[2];
-    box_end.s[0]=result.s[3];
-    box_end.s[1]=result.s[4];
-    box_end.s[2]=result.s[5];
+    this->box_start.s[0]=result.s[0];
+    this->box_start.s[1]=result.s[1];
+    this->box_start.s[2]=result.s[2];
+    this->box_end.s[0]=result.s[3];
+    this->box_end.s[1]=result.s[4];
+    this->box_end.s[2]=result.s[5];
     
-    hp_log("box_start:%lf",box_start.s[0]);
-    hp_log("box_start:%lf",box_start.s[1]);
-    hp_log("box_start:%lf",box_start.s[2]);
-    hp_log("box_end:%lf",box_end.s[0]);
-    hp_log("box_end:%lf",box_end.s[1]);
-    hp_log("box_end:%lf",box_end.s[2]);
     free(output);
     status = clReleaseKernel(kernel);//Release kernel.
     status = clReleaseProgram(program);    //Release the program object.
@@ -220,7 +233,7 @@ void KDTree::Node::calcAABB(){
     //free(input);
     free(devices);
 }
-*/
+
 
 
 
@@ -344,7 +357,10 @@ void KDTree::split() {
                 std::vector<cl_float3> this_points = {points[geo.s[0]], points[geo.s[1]], points[geo.s[2]]};
                 if(!std::all_of(this_points.begin(), this_points.end(), [&](const cl_float3 & p) ->bool {
                     return p.s[best_dimension] > best_pos[best_dimension];
-                })) now->left->geo_indexes.push_back(geo_index);
+                })) {
+                    now->left->geo_indexes.push_back(geo_index);
+                    hp_log("best: %lf",points[geometries[geo_index].s[0]].s[0]);
+                }
                 if(!std::all_of(this_points.begin(), this_points.end(), [&](const cl_float3 & p) ->bool {
                     return p.s[best_dimension] < best_pos[best_dimension];
                 })) now->right->geo_indexes.push_back(geo_index);
@@ -402,15 +418,14 @@ void KDTree::split() {
         }
 
         now->geo_indexes.clear();
-
-        now->left->calcMinMaxVals();
-        //now->left->calcAABB();
+        //now->left->calcMinMaxVals();
+        now->left->calcAABB();
         activeList.push(now->left.get());
         // this->left->setBoxSize();
         //now->left->setaabbSize();
 
-        now->right->calcMinMaxVals();
-        //now->right->calcAABB();
+        //now->right->calcMinMaxVals();
+        now->right->calcAABB();
         activeList.push(now->right.get());
         // this->right->setBoxSize();
         //now->right->setaabbSize();
@@ -485,10 +500,10 @@ KDTree::KDTree(std::string filename): Scene(filename) {
     this->root = std::make_unique<KDTree::Node>(this->points, this->geometries);
     for(size_t i = 0 ; i < this->geometries.size() ; i += 1)
         this->root->geo_indexes.push_back(i);
-    //this->root->calcAABB();
-    //this->root->setaabbSize();
-    this->root->calcMinMaxVals();
-    this->root->setBoxSize();
+    this->root->calcAABB();
+    this->root->setaabbSize();
+    //this->root->calcMinMaxVals();
+    //this->root->setBoxSize();
     this->split();
     this->root->removeEmptyNode();
 

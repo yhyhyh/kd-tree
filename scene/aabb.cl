@@ -64,7 +64,6 @@ __kernel void calaabb(__global int4 *geometries,__global float3 * points,__globa
     unsigned int localSize = get_local_size(0); 
     unsigned int globalSize= get_global_size(0);
     int num=globalSize;
-    //printf("num:%d\n",);
     
     
     
